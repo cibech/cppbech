@@ -120,14 +120,116 @@ static int rpng_win_display_image()
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	static int cxClient, cyClient, cxImage, cyImage;
+	
 	HDC         hdc;
     PAINTSTRUCT ps;
 	BLENDFUNCTION bf;
+	SCROLLINFO	si;
+	INT iVertPos, iHorzPos;
+	INT	iVertStart, iHorzStart;
 
     switch (msg) 
 	{
         case WM_CREATE:
+			cxImage = (int)ulPngWidth;
+			cyImage = (int)ulPngHeight;
             return 0;
+
+		case WM_SIZE:
+			cxClient = LOWORD(lParam);
+			cyClient = HIWORD(lParam);
+
+			si.cbSize = sizeof(si);
+			si.nMin = 0;
+			si.nMax = cyImage-1;
+			si.nPage = cyClient;
+			si.fMask = SIF_RANGE | SIF_PAGE;
+
+			SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+
+			si.nMax = cxImage-1;
+			si.nPage = cxClient;
+
+			SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
+
+			return 0;
+
+		case WM_VSCROLL:
+			si.cbSize = sizeof(si);
+			si.fMask = SIF_ALL;
+			GetScrollInfo(hwnd, SB_VERT, &si);
+
+			iVertPos = si.nPos;
+
+			switch(LOWORD(wParam))
+			{
+			case SB_LINEUP:
+				si.nPos -= 0xf;
+				break;
+			case SB_LINEDOWN:
+				si.nPos += 0xf;
+				break;
+			case SB_PAGEUP:
+				si.nPos -= si.nPage;
+				break;
+			case SB_PAGEDOWN:
+				si.nPos += si.nPage;
+				break;
+			case SB_THUMBTRACK:
+				si.nPos = si.nTrackPos;
+				break;
+			}
+
+			si.fMask = SIF_POS;
+			SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+			GetScrollInfo(hwnd, SB_VERT, &si);
+
+			if(si.nPos != iVertPos)
+			{
+				ScrollWindow(hwnd, 0, iVertPos-si.nPos, NULL, NULL);
+				UpdateWindow(hwnd);
+			}
+
+			return 0;
+
+		case WM_HSCROLL:
+			si.cbSize = sizeof(si);
+			si.fMask = SIF_ALL;
+			GetScrollInfo(hwnd, SB_HORZ, &si);
+
+			iHorzPos = si.nPos;
+
+			switch(LOWORD(wParam))
+			{
+			case SB_LINELEFT:
+				si.nPos -= 0xf;
+				break;
+			case SB_LINERIGHT:
+				si.nPos += 0xf;
+				break;
+			case SB_PAGELEFT:
+				si.nPos -= si.nPage;
+				break;
+			case SB_PAGERIGHT:
+				si.nPos += si.nPage;
+				break;
+			case SB_THUMBTRACK:
+				si.nPos = si.nTrackPos;
+				break;
+			}
+
+			si.fMask = SIF_POS;
+			SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
+			GetScrollInfo(hwnd, SB_HORZ, &si);
+
+			if(si.nPos != iHorzPos)
+			{
+				ScrollWindow(hwnd, iHorzPos-si.nPos, 0, NULL, NULL);
+				UpdateWindow(hwnd);
+			}
+
+			return 0;
 
 		case WM_PAINT:
             hdc = BeginPaint(hwnd, &ps);
@@ -135,17 +237,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			SelectObject(hmemdc, hbitmap);
 
 			//BitBlt(hdc, 0, 0, ulPngWidth, ulPngHeight, hmemdc, 0, 0, SRCCOPY);
-								
+
+			si.cbSize = sizeof(si);
+			si.fMask = SIF_POS;
+			GetScrollInfo(hwnd, SB_VERT, &si);
+			iVertStart = ps.rcPaint.top + si.nPos;
+			GetScrollInfo(hwnd, SB_HORZ, &si);
+			iHorzStart = ps.rcPaint.left + si.nPos;
 			
 			bf.BlendOp = AC_SRC_OVER;
 			bf.BlendFlags = 0;
 			bf.AlphaFormat = AC_SRC_ALPHA;
 			bf.SourceConstantAlpha = 255;
+
+			if(!AlphaBlend(hdc, ps.rcPaint.left, ps.rcPaint.top, __min(ps.rcPaint.right-ps.rcPaint.left, ulPngWidth), __min(ps.rcPaint.bottom-ps.rcPaint.top, ulPngHeight), hmemdc, iHorzStart, iVertStart, __min(ps.rcPaint.right-ps.rcPaint.left, ulPngWidth), __min(ps.rcPaint.bottom-ps.rcPaint.top, ulPngHeight), bf))
+			{
+				MessageBox(NULL, TEXT("Error"), TEXT("Af failed"), MB_OK);
+			}
+
+/*
 			if(!AlphaBlend(hdc, 0, 0, ulPngWidth, ulPngHeight, hmemdc, 0, 0, ulPngWidth, ulPngHeight, bf))
 			{
 				MessageBox(NULL, TEXT("Error"), TEXT("Af failed"), MB_OK);
 			}
-						
+*/						
 			EndPaint(hwnd, &ps);
             return 0;
 
@@ -333,7 +448,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	}
 
 	//Create the BITMAPINFOHEADER
-	ulWinImageRowbytes = ((4*ulPngWidth) >> 2) << 2;	//For a alpha byte
+	ulWinImageRowbytes = ((4*ulPngWidth) >> 2) << 2;	//Rowbytes must be divided by 4
 
 	memset(&biMinfo, 0, sizeof(BITMAPINFO));
 
@@ -355,7 +470,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wndclass.hInstance = hInstance;
     wndclass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     wndclass.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wndclass.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);	//Set Background
+    wndclass.hbrBackground = (HBRUSH)GetStockObject(LTGRAY_BRUSH);	//Set Background
     wndclass.lpszMenuName = NULL;
     wndclass.lpszClassName = szAppName;
     wndclass.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
@@ -368,7 +483,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     hMainWnd = CreateWindow(szAppName, 
 							szAppName, 
-							WS_OVERLAPPEDWINDOW, 
+							WS_VSCROLL | WS_HSCROLL | WS_OVERLAPPEDWINDOW,//WS_POPUP | WS_VISIBLE, 
 							CW_USEDEFAULT, 
 							CW_USEDEFAULT, 
 							ulPngWidth + nExtraWidth, 
