@@ -1,5 +1,4 @@
-#include "WinMain.h"
-#include "WinMain.h"
+#include "public.h"
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
