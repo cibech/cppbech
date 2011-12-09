@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include <process.h>
 #include "SocketBase.h"
 
 CSocketBase::CSocketBase()
@@ -19,12 +20,34 @@ CSocketBase::~CSocketBase()
     if(m_socket)
     {
         closesocket(m_socket);
+		m_socket = NULL;
     }
 
     if(m_SocketEvent)
     {
         WSACloseEvent(m_SocketEvent);
+		m_SocketEvent = NULL;
     }
+}
+
+void CSocketBase::setRawSocket(SOCKET s)
+{
+	//托管SOCKET
+	m_socket = s;
+
+	//对于托管的SOCKET，默认其连接
+	m_bIsConnected = true;
+
+	//创建异步事件
+	if(m_SocketEvent == NULL)
+	{
+		m_SocketEvent = WSACreateEvent();
+	}
+}
+
+void CSocketBase::Destroy()
+{
+	this->~CSocketBase();
 }
 
 //------------------------------------------------------------------------------
@@ -91,6 +114,131 @@ void CSocketBase::SetSendBufferSize(UINT uiByte)
 SOCKET CSocketBase::getRawSocket()
 {
     return m_socket;
+}
+
+//------------------------------------------------------------------------------
+// 连接到远程，本方法可以无参调用，表示重连
+//------------------------------------------------------------------------------
+bool CSocketBase::BindOnPort(UINT uiPort)
+{
+	//如果socket无效则新建，为了可以重复调用
+	if(m_socket == NULL)
+	{
+		m_socket = CreateTCPSocket();
+	}	
+
+	//开启本地监听
+	SOCKADDR_IN addrLocal;
+	memset(&addrLocal, 0, sizeof(addrLocal));
+
+	addrLocal.sin_family = AF_INET;
+	addrLocal.sin_addr.s_addr = htonl(INADDR_ANY);
+	addrLocal.sin_port = htons(uiPort);
+
+	//绑定
+	int nRet = bind(m_socket, (PSOCKADDR)&addrLocal, sizeof(addrLocal));
+
+	//唯一的原因是端口被占用
+	if(nRet == SOCKET_ERROR)
+	{
+		m_nLastWSAError = WSAGetLastError();
+		return false;
+	}
+
+	return true;
+}
+
+//------------------------------------------------------------------------------
+// 开始接受连接，本方法阻塞
+//------------------------------------------------------------------------------
+bool CSocketBase::StartListenAndAccept(HANDLE_ACCEPT_THREAD pThreadFunc, BOOL* pExitFlag, USHORT nLoopTimeOutSec)
+{
+	//异步事件
+	if(m_SocketEvent == NULL)
+	{
+		m_SocketEvent = WSACreateEvent();
+	}
+
+	//注册连接事件
+	WSAResetEvent(m_SocketEvent);           //清除之前尚未处理的事件
+	WSAEventSelect(m_socket, m_SocketEvent, FD_ACCEPT | FD_CLOSE);
+
+	//监听
+	int nRet = listen(m_socket, 5);
+
+	//唯一的原因是端口被占用
+	if(nRet == SOCKET_ERROR)
+	{
+		m_nLastWSAError = WSAGetLastError();
+		return false;
+	}
+
+	//等待连接
+	while((pExitFlag == NULL ? TRUE : *pExitFlag))
+	{
+		DWORD dwRet = WSAWaitForMultipleEvents(1, &m_SocketEvent, FALSE, nLoopTimeOutSec*1000, FALSE);
+
+		if(dwRet == WSA_WAIT_EVENT_0)
+		{
+			//如果网络事件发生
+			WSANETWORKEVENTS wsaEvents;
+			memset(&wsaEvents, 0, sizeof(wsaEvents));
+
+			WSAResetEvent(m_SocketEvent);
+			WSAEnumNetworkEvents(m_socket, m_SocketEvent, &wsaEvents);
+
+			if((wsaEvents.lNetworkEvents & FD_ACCEPT) &&
+				(wsaEvents.iErrorCode[FD_ACCEPT_BIT] == 0))
+			{
+				//记录远程地址
+				SOCKADDR_IN addrRemote;
+				memset(&addrRemote, 0, sizeof(addrRemote));
+				int nAddrSize = sizeof(addrRemote);
+
+				SOCKET sockRemote = accept(m_socket, (PSOCKADDR)&addrRemote, &nAddrSize);
+
+				//无效连接
+				if(sockRemote == INVALID_SOCKET)
+				{
+					m_nLastWSAError = WSAGetLastError();
+
+					//本线程持续监听
+					continue;
+				}
+
+				//记录连接日志
+				/*
+				if(g_pLogger != NULL)
+				{
+					TCHAR pcLogTemp[128] = {0};
+					ntohl(addrRemote.sin_addr.s_addr);
+					char* pTempIp = inet_ntoa(addrRemote.sin_addr);
+
+					wsprintf(pcLogTemp, _T("Remote IP %s connected with port %d"), 
+						pTempIp, ntohs(addrRemote.sin_port));
+
+					//写入
+					g_pLogger->WriteLog(pcLogTemp);
+				}*/
+
+				//开启新处理线程
+				HANDLE hThread;
+				unsigned unThreadID;
+
+				hThread = (HANDLE)_beginthreadex(NULL, 0, pThreadFunc, (void*)sockRemote, 0, &unThreadID);
+
+				//已经不需要此HANDLE
+				CloseHandle(hThread);
+			}
+		}
+		else
+		{
+			//等待超时，重新开始
+			continue;
+		}
+	}
+
+	return true;
 }
 
 //------------------------------------------------------------------------------
@@ -177,6 +325,11 @@ bool CSocketBase::ConnectRemote(const char* pcRemoteIP, SHORT sPort, USHORT nTim
                 }
             }
         }
+        else
+        {
+           m_bIsConnected = false;
+        }
+
     }
     else
     {
@@ -252,12 +405,14 @@ SHORT CSocketBase::getRemotePort()
 //------------------------------------------------------------------------------
 // 发送文本串，一次送完
 //------------------------------------------------------------------------------
-bool CSocketBase::SendMsg(const char* pcMsg, USHORT nTimeOutSec)
+int CSocketBase::SendMsg(const char* pcMsg, USHORT nTimeOutSec)
 {
+	bool bIsTimeOut = false;
+
     //检查连接状态
     if(!m_bIsConnected)
     {
-        return false;
+        return SOB_RET_FAIL;
     }
 
     //发送前注册事件
@@ -265,7 +420,7 @@ bool CSocketBase::SendMsg(const char* pcMsg, USHORT nTimeOutSec)
     WSAEventSelect(m_socket, m_SocketEvent, FD_WRITE | FD_CLOSE);
 
     //尝试发送
-    int nRet = send(m_socket, pcMsg, strlen(pcMsg), NULL);
+    int nRet = send(m_socket, pcMsg, (int)strlen(pcMsg), NULL);
 
     if(nRet == SOCKET_ERROR)
     {
@@ -290,22 +445,37 @@ bool CSocketBase::SendMsg(const char* pcMsg, USHORT nTimeOutSec)
                     (wsaEvents.iErrorCode[FD_WRITE_BIT] == 0))
                 {
                     //再次发送文本
-                    nRet = send(m_socket, pcMsg, strlen(pcMsg), NULL);
+                    nRet = (int)send(m_socket, pcMsg, (int)strlen(pcMsg), NULL);
 
                     if(nRet > 0)
                     {
                         //如果发送字节大于0，表明发送成功
-                        return true;
+                        return SOB_RET_OK;
                     }
                 }
-            }        
+            }
+			else
+			{
+				//超时
+				bIsTimeOut = true;
+			}
+        }
+        else
+        {
+          m_bIsConnected = false;
         }
     }
     else
     {
         //第一次便发送成功
-        return true;
+        return SOB_RET_OK;
     }
+
+	//如果超时
+	if(bIsTimeOut)
+	{
+		return SOB_RET_TIMEOUT;
+	}
 
     //如果上述发送失败
     m_nLastWSAError = WSAGetLastError();
@@ -315,12 +485,14 @@ bool CSocketBase::SendMsg(const char* pcMsg, USHORT nTimeOutSec)
 //------------------------------------------------------------------------------
 // 发送缓冲区
 //------------------------------------------------------------------------------
-bool CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSec)
+int CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSec)
 {
+	bool bIsTimeOut = false;
+
     //检查连接状态
     if(!m_bIsConnected)
     {
-        return false;
+        return SOB_RET_FAIL;
     }
 
     //发送前注册事件
@@ -328,7 +500,7 @@ bool CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSe
     WSAEventSelect(m_socket, m_SocketEvent, FD_WRITE | FD_CLOSE);
 
     //发送量计数
-    UINT nSent = 0;
+    int nSent = 0;
 
     //总发送次数，为发送次数定一个限额
     int nSendTimes = 0;
@@ -339,7 +511,7 @@ bool CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSe
     char* pcSentPos = pBuffer;
 
     //直到所有的缓冲都发送完毕
-    while(nSent < uiBufferSize)
+    while(nSent < (int)uiBufferSize)
     {
         //检查发送次数是否超限
         if(nSendTimes > nSendLimitTimes)
@@ -400,10 +572,17 @@ bool CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSe
                         }
                     }
                 }
+				else
+				{
+					//超时
+					bIsTimeOut = true;
+					break;
+				}
             }
             else
             {
                 //遇到阻塞之外的错误，直接退出
+                m_bIsConnected = false;
                 break;
             }
         }
@@ -421,23 +600,31 @@ bool CSocketBase::SendBuffer(char* pBuffer, UINT uiBufferSize, USHORT nTimeOutSe
     //如果发送完成
     if(nSent == uiBufferSize)
     {
-        return true;
+        return SOB_RET_OK;
     }
+
+	//如果超时
+	if(bIsTimeOut)
+	{
+		return SOB_RET_TIMEOUT;
+	}
 
     //没能成功返回
     m_nLastWSAError = WSAGetLastError();
-    return false;
+    return SOB_RET_FAIL;
 }
 
 //------------------------------------------------------------------------------
 // 接受文本串，一次接受
 //------------------------------------------------------------------------------
-bool CSocketBase::RecvOnce(char* pRecvBuffer, UINT uiBufferSize, UINT& uiRecv, USHORT nTimeOutSec)
+int CSocketBase::RecvOnce(char* pRecvBuffer, UINT uiBufferSize, UINT& uiRecv, USHORT nTimeOutSec)
 {
+	bool bIsTimeOut = false;
+
     //检查连接状态
     if(!m_bIsConnected)
     {
-        return false;
+        return SOB_RET_FAIL;
     }
 
     //发送前注册事件
@@ -476,33 +663,53 @@ bool CSocketBase::RecvOnce(char* pRecvBuffer, UINT uiBufferSize, UINT& uiRecv, U
                     {
                         //如果发送字节大于0，表明发送成功
                         uiRecv = nRet;
-                        return true;
+                        return SOB_RET_OK;
                     }
                 }
-            }        
+            }
+			else
+			{
+				bIsTimeOut = true;
+			}
+        }
+        else
+        {
+			m_bIsConnected = false;
         }
     }
+	else if(nRet == 0)		//对方主动关闭连接
+	{
+		m_bIsConnected = false;	
+	}
     else
     {
         //第一次便接收成功
         uiRecv = nRet;
-        return true;
+        return SOB_RET_OK;
     }
+
+	//如果超时
+	if(bIsTimeOut)
+	{
+		return SOB_RET_TIMEOUT;
+	}
 
     //如果上述接收失败
     m_nLastWSAError = WSAGetLastError();
-    return false;
+    return SOB_RET_FAIL;
 }
 
 //------------------------------------------------------------------------------
 // 接收缓冲区，缓冲应该比待接受量要大一点才安全
 //------------------------------------------------------------------------------
-bool CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSize, USHORT nTimeOutSec)
+int CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSize, USHORT nTimeOutSec)
 {
+	bool bIsTimeOut = false;
+
     //检查连接状态
     if(!m_bIsConnected)
     {
-        return false;
+        return SOB_RET_FAIL;
     }
 
     //接收前注册事件
@@ -510,7 +717,7 @@ bool CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSi
     WSAEventSelect(m_socket, m_SocketEvent, FD_READ | FD_CLOSE);
 
     //接收量计数
-    UINT nReceived = 0;
+    int nReceived = 0;
 
     //总接收次数，为接收次数定一个限额
     int nRecvTimes = 0;
@@ -520,7 +727,7 @@ bool CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSi
     char* pcRecvPos = pRecvBuffer;
 
     //直到接收到足够指定量的缓冲
-    while(nReceived < uiRecvSize)
+    while(nReceived < (int)uiRecvSize)
     {
         //检查接收次数是否超限
         if(nRecvTimes > nRecvLimitTimes)
@@ -581,13 +788,25 @@ bool CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSi
                         }
                     }
                 }
+				else
+				{
+					//超时
+					bIsTimeOut = true;
+					break;
+				}
             }
             else
             {
                 //遇到阻塞之外的错误，直接退出
+                m_bIsConnected = false;
                 break;
             }
         }
+		else if(nRet == 0)		//对方主动关闭连接
+		{
+			m_bIsConnected = false;
+			break;	
+		}
         else
         {
             //接收成功，累加接受量，更新游标
@@ -602,12 +821,18 @@ bool CSocketBase::RecvBuffer(char* pRecvBuffer, UINT uiBufferSize, UINT uiRecvSi
     //如果接收完成
     if(nReceived == uiRecvSize)
     {
-        return true;
+        return SOB_RET_OK;
     }
+
+	//如果超时
+	if(bIsTimeOut)
+	{
+		return SOB_RET_TIMEOUT;
+	}
 
     //没能成功返回
     m_nLastWSAError = WSAGetLastError();
-    return false;
+    return SOB_RET_FAIL;
 }
 
 //------------------------------------------------------------------------------

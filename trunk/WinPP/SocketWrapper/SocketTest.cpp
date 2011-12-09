@@ -16,7 +16,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 	CSocketBase::ResolveAddressToIp("www.baidu.com", myip);
 
 	CSocketBase mySocket;
-	bool bRet = mySocket.ConnectRemote(myip, 80);
+	int bRet = mySocket.ConnectRemote(myip, 80);
 
 	char msgSend[100] = "GET / HTTP/1.1\r\n\r\n";
 	
