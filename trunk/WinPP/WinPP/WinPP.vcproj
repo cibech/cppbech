@@ -203,6 +203,18 @@
 				>
 			</File>
 		</Filter>
+		<Filter
+			Name="ThreadSync"
+			>
+			<File
+				RelativePath=".\ThreadSync\ThreadSync.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\ThreadSync\ThreadSync.h"
+				>
+			</File>
+		</Filter>
 	</Files>
 	<Globals>
 	</Globals>
