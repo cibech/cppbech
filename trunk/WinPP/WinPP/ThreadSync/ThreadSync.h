@@ -103,4 +103,7 @@ protected:
 template <class T>
 CMyCriticalSection CMultiThreadSync<T>::m_Sync;
 
+void* _blocknew_ne_wait(size_t sz, int nWaitSec = 1);
+void* _blocknew_ne(size_t sz);
+
 #endif

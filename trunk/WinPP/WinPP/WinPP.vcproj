@@ -215,6 +215,30 @@
 				>
 			</File>
 		</Filter>
+		<Filter
+			Name="RuntimeLogger"
+			>
+			<File
+				RelativePath=".\RuntimeLogger\RuntimeLogger.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\RuntimeLogger\RuntimeLogger.h"
+				>
+			</File>
+		</Filter>
+		<Filter
+			Name="ToolFuncs"
+			>
+			<File
+				RelativePath=".\ToolFuncs\ToolFuncs.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\ToolFuncs\ToolFuncs.h"
+				>
+			</File>
+		</Filter>
 	</Files>
 	<Globals>
 	</Globals>
