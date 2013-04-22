@@ -41,7 +41,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="..\..\libpng140\lpng140;..\..\libpng140\zlib"
+				AdditionalIncludeDirectories="..\..\thirdpart\lpng14;&quot;..\..\thirdpart\zlib-1.2.7&quot;;&quot;..\..\thirdpart\zlib-1.2.7\build&quot;"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -61,7 +61,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="MSIMG32.LIB"
+				AdditionalDependencies="MSIMG32.LIB ..\..\thirdpart\lpng14\build\Debug\libpng14d.lib"
 				LinkIncremental="2"
 				GenerateDebugInformation="true"
 				SubSystem="2"
@@ -116,7 +116,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
-				AdditionalIncludeDirectories="..\..\libpng140\lpng140;..\..\libpng140\zlib"
+				AdditionalIncludeDirectories="..\..\thirdpart\lpng14;&quot;..\..\thirdpart\zlib-1.2.7&quot;;&quot;..\..\thirdpart\zlib-1.2.7\build&quot;"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
