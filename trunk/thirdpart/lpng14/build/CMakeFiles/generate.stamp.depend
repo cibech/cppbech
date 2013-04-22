@@ -1,0 +1,20 @@
+# CMake generation dependency list for this directory.
+E:/SVN/Google/cppbech/thirdpart/lpng14/CMakeLists.txt
+E:/SVN/Google/cppbech/thirdpart/lpng14/build/CMakeFiles/2.8.10.2/CMakeSystem.cmake
+E:/SVN/Google/cppbech/thirdpart/lpng14/build/CMakeFiles/2.8.10.2/CMakeCCompiler.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeSystemSpecificInformation.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeGenericSystem.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/Platform/Windows.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/Platform/WindowsPaths.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeCInformation.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/Platform/Windows-MSVC-C.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/Platform/Windows-MSVC.cmake
+E:/SVN/Google/cppbech/thirdpart/lpng14/build/CMakeFiles/2.8.10.2/CMakeRCCompiler.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeRCInformation.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeCommonLanguageInclude.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/FindZLIB.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/FindPackageHandleStandardArgs.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/FindPackageMessage.cmake
+D:/SDK/CMake 2.8/share/cmake-2.8/Modules/CMakeParseArguments.cmake
+E:/SVN/Google/cppbech/thirdpart/lpng14/libpng.pc.in
+E:/SVN/Google/cppbech/thirdpart/lpng14/libpng-config.in
