@@ -108,6 +108,17 @@ SOCKET CSocketBase::CreateTCPSocket()
         m_nLastWSAError = WSAGetLastError();
     }
 
+	//创建异步事件
+	if(m_SocketWriteEvent == NULL)
+	{
+		m_SocketWriteEvent = WSACreateEvent();
+	}
+
+	if(m_SocketReadEvent == NULL)
+	{
+		m_SocketReadEvent = WSACreateEvent();
+	}
+
 	//设置SOCKET属性
 	const char chOpt = 1;
 	int nRet = setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &chOpt, sizeof(char));
@@ -128,6 +139,17 @@ SOCKET CSocketBase::CreateUDPSocket()
 	{
 		s = NULL;
 		m_nLastWSAError = WSAGetLastError();
+	}
+
+	//创建异步事件
+	if(m_SocketWriteEvent == NULL)
+	{
+		m_SocketWriteEvent = WSACreateEvent();
+	}
+
+	if(m_SocketReadEvent == NULL)
+	{
+		m_SocketReadEvent = WSACreateEvent();
 	}
 
 	return s;    
@@ -250,12 +272,6 @@ bool CSocketBase::BindOnUDPPort(UINT uiPort)
 //------------------------------------------------------------------------------
 bool CSocketBase::StartListenAndAccept(HANDLE_ACCEPT_THREAD pThreadFunc, BOOL* pExitFlag, USHORT nLoopTimeOutSec)
 {
-	//异步事件
-	if(m_SocketReadEvent == NULL)
-	{
-		m_SocketReadEvent = WSACreateEvent();
-	}
-
 	//注册连接事件
 	WSAResetEvent(m_SocketReadEvent);           //清除之前尚未处理的事件
 	WSAEventSelect(m_socket, m_SocketReadEvent, FD_ACCEPT | FD_CLOSE);
@@ -349,12 +365,6 @@ bool CSocketBase::ConnectRemote(const char* pcRemoteIP, SHORT sPort, USHORT nTim
     addrRemote.sin_family = AF_INET;
     addrRemote.sin_addr.S_un.S_addr = inet_addr(m_pcRemoteIP);
     addrRemote.sin_port = htons(m_sRemotePort);
-
-    //异步事件
-    if(m_SocketWriteEvent == NULL)
-    {
-        m_SocketWriteEvent = WSACreateEvent();
-    }
 
     //注册连接事件
     WSAResetEvent(m_SocketWriteEvent);           //清除之前尚未处理的事件
@@ -785,9 +795,8 @@ int CSocketBase::RecvUDPMsg(char* pBuffer, UINT uiBufferSize, UINT& uiRecv, char
 	bool bIsTimeOut = false;
 
 	//发送前注册事件
-	HANDLE socketEvent = WSACreateEvent();
-	WSAResetEvent(socketEvent);
-	WSAEventSelect(m_socket, socketEvent, FD_READ);
+	WSAResetEvent(m_SocketReadEvent);
+	WSAEventSelect(m_socket, m_SocketReadEvent, FD_READ);
 
 	//远程信息
 	SOCKADDR_IN addrRemote;
@@ -804,7 +813,7 @@ int CSocketBase::RecvUDPMsg(char* pBuffer, UINT uiBufferSize, UINT& uiRecv, char
 		//遭遇阻塞
 		if(m_nLastWSAError == WSAEWOULDBLOCK)
 		{
-			DWORD dwRet = WSAWaitForMultipleEvents(1, &socketEvent, FALSE, nTimeOutSec*1000, FALSE);
+			DWORD dwRet = WSAWaitForMultipleEvents(1, &m_SocketReadEvent, FALSE, nTimeOutSec*1000, FALSE);
 
 			//如果网络事件发生
 			WSANETWORKEVENTS wsaEvents;
@@ -812,8 +821,8 @@ int CSocketBase::RecvUDPMsg(char* pBuffer, UINT uiBufferSize, UINT& uiRecv, char
 
 			if(dwRet == WSA_WAIT_EVENT_0)
 			{
-				WSAResetEvent(socketEvent);
-				int nEnum = WSAEnumNetworkEvents(m_socket, socketEvent, &wsaEvents);
+				WSAResetEvent(m_SocketReadEvent);
+				int nEnum = WSAEnumNetworkEvents(m_socket, m_SocketReadEvent, &wsaEvents);
 
 				//如果接受可以进行并且没有错误发生
 				if((wsaEvents.lNetworkEvents & FD_READ) &&
@@ -831,7 +840,6 @@ int CSocketBase::RecvUDPMsg(char* pBuffer, UINT uiBufferSize, UINT& uiRecv, char
 						strcpy(pcIP, inet_ntoa(addrRemote.sin_addr));
 						uPort = ntohs(addrRemote.sin_port);
 
-						WSACloseEvent(socketEvent);
 						return SOB_RET_OK;
 					}
 				}
@@ -851,21 +859,18 @@ int CSocketBase::RecvUDPMsg(char* pBuffer, UINT uiBufferSize, UINT& uiRecv, char
 		strcpy(pcIP, inet_ntoa(addrRemote.sin_addr));
 		uPort = ntohs(addrRemote.sin_port);
 
-		WSACloseEvent(socketEvent);
 		return SOB_RET_OK;
 	}
 
 	//如果超时
 	if(bIsTimeOut)
 	{
-		WSACloseEvent(socketEvent);
 		return SOB_RET_TIMEOUT;
 	}
 
 	//如果上述接收失败
 	m_nLastWSAError = WSAGetLastError();
 
-	WSACloseEvent(socketEvent);
 	return SOB_RET_FAIL;
 }
 
